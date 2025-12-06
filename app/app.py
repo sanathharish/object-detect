@@ -9,68 +9,55 @@ import time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.detector import ObjectDetector
 
- # Initialize the ObjectDetector
-
-detector = ObjectDetector()
-
 st.title("Real Time Object Detection Dashboard")
 
-mode = st.radio("Select Mode", ("Image Upload", "Webcam Feed"))
+ # Initialize the ObjectDetector
+detector = ObjectDetector()
 
-# File uploader for images
+mode = st.radio("Select Mode", ("Upload Image", "Webcam"))
 
-if mode == "Image Upload":
+conf = st.slider("Confidence Threshold", 0.2, 1.0, 0.5)
+iou = st.slider("IOU Threshold", 0.2, 1.0, 0.45)
 
-    uploaded = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
+#---------UPLOAD MODE---------
+if mode == "Upload Image":
 
-    if uploaded:
-        # Open the uploaded image as PIL Image
-        img = Image.open(uploaded).convert("RGB")
+    file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
+
+    if file:
+        img = Image.open(file)
+        st.image(img, caption="Uploaded Image")
     
-        # Convert PIL Image to numpy array
-        img_np = np.array(img)
+        results = detector.model(img, conf=conf, iou=iou)
+        annotated = results[0].plot()
 
-        # Run detection using your detector class
-        result = detector.detect_frame(img_np)        
-        
-        # Draw annotated boxes
-        annotated_img = detector.draw_boxes(img_np, result)
-    
-        # Display results
-        st.image(annotated_img, caption="Detections", width=700)
+        annotated = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+        st.image(annotated, caption="Detections", width=700)
 
-        # Debug output if needed
-        st.write("Detection Output:", result.boxes.data.tolist())
+#---------WEBCAM MODE---------
+elif mode == "Webcam":
+    run = st.checkbox("Start Camera")
 
-elif mode == "Webcam Feed":
-    stframe = st.empty()
     cap = cv2.VideoCapture(0)
+    curr_time = time.time()
 
-    if not cap.isOpened():
-        st.error("Error: Could not open webcam.")
-    else:
-        fps_text = st.empty()
-        prev_time = 0
+    frame_placeholder = st.empty()
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                st.error("Error: Could not read frame from webcam.")
-                break
+    while run:
+        ret, frame = cap.read()
+        if not ret:
+            st.warning("Camera not detected!")
+            break
 
-            result = detector.detect_frame(frame)
-            annotated_frame = detector.draw_boxes(frame, result)
+        results = detector.detect_frame(frame)
 
-            # Calculate FPS
-            curr_time = time.time()
-            fps = 1 / (curr_time - prev_time) if prev_time != 0 else 0
-            prev_time = curr_time
-            fps_text.text(f"FPS: {fps:.2f}")
+        annotated = detector.draw_boxes(frame, results)
 
-            stframe.image(annotated_frame, channels="RGB", width=st.session_state.get('video_width', 800))
+        new_time = time.time()
+        fps = 1 / (new_time - curr_time)
+        curr_time = new_time
 
-            # Streamlit refresh control
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+        cv2.putText(annotated, f"FPS: {fps:.1f}", (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-    cap.release()
+        frame_placeholder.image(annotated, channels="RGB")
